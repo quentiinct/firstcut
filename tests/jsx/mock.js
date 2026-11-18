@@ -307,9 +307,11 @@ MockTrack.prototype._razor = function (tick) {
             var lkL = cfg === 'break' ? null : it._lk;
             var lkR = cfg === 'break' ? null : cfg === 'pairs' && it._lk ? it._lk + '@' + tick : it._lk;
             var inR = (it.inP || 0) + (tick - it.s) / MOCK.TPS;
+            // media a une autre cadence que la sequence : Premiere cale le point d'entree sur ses images
+            if (it.mediaFps) inR = Math.round(inR * it.mediaFps) / it.mediaFps;
             this._items.splice(i, 1,
-                { s: it.s, e: tick, _dis: dis, _lk: lkL, inP: it.inP, node: it.node },
-                { s: tick, e: it.e, _dis: dis, _lk: lkR, inP: inR, node: it.node });
+                { s: it.s, e: tick, _dis: dis, _lk: lkL, inP: it.inP, node: it.node, mediaFps: it.mediaFps },
+                { s: tick, e: it.e, _dis: dis, _lk: lkR, inP: inR, node: it.node, mediaFps: it.mediaFps });
             this._rebuild();
             return;
         }

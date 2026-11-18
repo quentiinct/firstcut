@@ -957,6 +957,43 @@ function T_groupsByOverlap(refs) {
                     T_eq(T_groupsByOverlap([['V', 0], ['V', 1], ['A', 0], ['A', 1]]), 'ok', 'chaque morceau de V2 relie aux morceaux qu il chevauche');
                     T_eq(res.finish.relinkFailed, 0, 'aucun lien en echec');
                 });
+                T_scenario('liens double POV + double son [' + sel[0] + ', rasoir ' + razor + '] : camera 2 en 30 i/s dans une sequence a 60 i/s', function () {
+                    MOCK.install(60, { V: [[[0, 1800]], [[80, 1790]]], A: [[[0, 1800]], [[80, 1790]]] });
+                    for (var k in sel[1]) if (sel[1].hasOwnProperty(k)) MOCK.config[k] = sel[1][k];
+                    MOCK.config.razorLinks = razor;
+                    var nodes = [['V', 0, 'cam1'], ['A', 0, 'micro1'], ['V', 1, 'cam2'], ['A', 1, 'micro2']];
+                    for (var n = 0; n < nodes.length; n++) {
+                        var tr = nodes[n][0] === 'V' ? MOCK.seq.videoTracks[nodes[n][1]] : MOCK.seq.audioTracks[nodes[n][1]];
+                        tr._items[0].node = nodes[n][2];
+                    }
+                    // camera 2 : media en 30 i/s, Premiere cale son point d'entree sur ses images a chaque coupe
+                    MOCK.seq.videoTracks[1]._items[0].mediaFps = 30;
+                    for (var t = 0; t < 2; t++) {
+                        MOCK.seq.videoTracks[t]._rebuild();
+                        MOCK.seq.audioTracks[t]._rebuild();
+                    }
+                    T_linkTogether('tout', [['V', 0, 0], ['V', 1, 0], ['A', 0, 0], ['A', 1, 0]]);
+                    var res = T_run({ mode: 'delete', A: SIL });
+                    T_check(res.finish && res.finish.ok, 'finish : ' + (res.finish && res.finish.mismatchNotes));
+                    T_eq(T_groupsByOverlap([['V', 0], ['V', 1], ['A', 0], ['A', 1]]), 'ok', 'V2 relie malgre l arrondi de son point d entree');
+                    T_eq(res.finish.relinkFailed, 0, 'aucun lien en echec');
+                });
+                T_scenario('liens [' + sel[0] + ', rasoir ' + razor + '] : meme rush deux fois, synchro differente -> pas melanges', function () {
+                    MOCK.install(30, { V: [[[0, 900], [900, 1800]]], A: [[[0, 900], [900, 1800]]] });
+                    for (var k in sel[1]) if (sel[1].hasOwnProperty(k)) MOCK.config[k] = sel[1][k];
+                    MOCK.config.razorLinks = razor;
+                    // deuxieme passage du rush : le son a ete recale d'une seconde
+                    MOCK.seq.videoTracks[0]._items[1].inP = 30;
+                    MOCK.seq.audioTracks[0]._items[1].inP = 31;
+                    MOCK.seq.videoTracks[0]._rebuild();
+                    MOCK.seq.audioTracks[0]._rebuild();
+                    T_linkTogether('p1', [['V', 0, 0], ['A', 0, 0]]);
+                    T_linkTogether('p2', [['V', 0, 1], ['A', 0, 1]]);
+                    var res = T_run({ mode: 'delete', A: SIL.concat([[1000, 1060]]) });
+                    T_check(res.finish && res.finish.ok, 'finish : ' + (res.finish && res.finish.mismatchNotes));
+                    T_eq(T_pairsExact([0]), 'ok', 'chaque morceau video lie a son morceau audio');
+                    T_eq(res.finish.relinkFailed, 0, 'aucun lien en echec');
+                });
                 T_scenario('liens double POV + double son [' + sel[0] + ', rasoir ' + razor + '] : chaque camera liee a son son, decalees', function () {
                     MOCK.install(30, { V: [[[0, 1800]], [[80, 1790]]], A: [[[0, 1800]], [[80, 1790]]] });
                     for (var k in sel[1]) if (sel[1].hasOwnProperty(k)) MOCK.config[k] = sel[1][k];

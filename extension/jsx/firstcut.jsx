@@ -1274,10 +1274,52 @@ function adr_isAudioItem(item) {
     return false;
 }
 
-/** Signature d'un couple video / audio lie : survit a la coupe et au resserrement. */
-function adr_linkKey(S, vIndex, aIndex, v, a) {
-    var delta = (adr_inTicks(v) - adr_num(v.start.ticks)) - (adr_inTicks(a) - adr_num(a.start.ticks));
-    return 'V' + vIndex + 'A' + aIndex + '|' + adr_nodeId(v) + '|' + adr_nodeId(a) + '|' + Math.round(delta / S.tb);
+/** Couple video / audio lie : pistes et sources. Survit a la coupe et au resserrement. */
+function adr_pairBase(vIndex, aIndex, v, a) {
+    return 'V' + vIndex + 'A' + aIndex + '|' + adr_nodeId(v) + '|' + adr_nodeId(a);
+}
+
+/** Decalage de synchro entre la video et l'audio d'un couple (ticks). */
+function adr_pairDelta(v, a) {
+    return (adr_inTicks(v) - adr_num(v.start.ticks)) - (adr_inTicks(a) - adr_num(a.start.ticks));
+}
+
+// Ecart de synchro accepte entre un couple note et un morceau : Premiere cale
+// le point d'entree d'une camera sur ses propres images (camera a 30 i/s dans
+// une sequence a 60 i/s), ce qui fait bouger la synchro d'une ou deux images.
+var ADR_LINK_SLACK = ADR_TPS / 4;
+
+/**
+ * Ces deux morceaux etaient-ils lies avant la coupe ? Memes pistes et memes
+ * sources qu'un couple note. Le decalage de synchro ne sert qu'a departager
+ * plusieurs couples des memes sources sur les memes pistes.
+ */
+function adr_wasLinked(S, vIndex, aIndex, v, a) {
+    var list = S.linkKeys[adr_pairBase(vIndex, aIndex, v, a)];
+    if (!list) return false;
+    if (list.length === 1) return true;
+    var d = adr_pairDelta(v, a);
+    for (var i = 0; i < list.length; i++) {
+        if (adr_abs(list[i] - d) <= ADR_LINK_SLACK) return true;
+    }
+    return false;
+}
+
+/** Note un couple ; rend true s'il est nouveau. */
+function adr_notePair(S, vIndex, aIndex, v, a) {
+    var base = adr_pairBase(vIndex, aIndex, v, a);
+    var d = adr_pairDelta(v, a);
+    var list = S.linkKeys[base];
+    if (!list) {
+        S.linkKeys[base] = [d];
+        S.linkTracks['V' + (vIndex + 1) + '-A' + (aIndex + 1)] = true;
+        return true;
+    }
+    for (var i = 0; i < list.length; i++) {
+        if (adr_abs(list[i] - d) <= S.tb / 2) return false;
+    }
+    list.push(d);
+    return true;
 }
 
 /** Piste video (parmi celles traitees) qui porte ce clip, ou -1. */
@@ -1306,6 +1348,7 @@ function adr_videoTrackOf(S, item) {
  */
 function adr_recordLinks(S) {
     S.linkKeys = {};
+    S.linkTracks = {};
     S.linkPairs = 0;
     S.linkApi = typeof S.seq.linkSelection === 'function' && typeof S.seq.unlinkSelection === 'function';
     if (!S.linkApi) return;
@@ -1328,9 +1371,7 @@ function adr_recordLinks(S) {
                 if (adr_isAudioItem(v)) continue;
                 var vi = adr_videoTrackOf(S, v);
                 if (vi < 0) continue;
-                var key = adr_linkKey(S, vi, A.index, v, a);
-                if (!S.linkKeys[key]) S.linkPairs++;
-                S.linkKeys[key] = true;
+                if (adr_notePair(S, vi, A.index, v, a)) S.linkPairs++;
             }
         }
     }
@@ -1527,10 +1568,10 @@ function adr_unitRelink(S) {
                 var ce = adr_num(c.end.ticks);
                 var pk = adr_pieceKey(S, O.kind, O.index, cs, ce);
                 if (inGroup[pk]) continue;
-                var key = m.kind === 'V'
-                    ? adr_linkKey(S, m.index, O.index, m.clip, c)
-                    : adr_linkKey(S, O.index, m.index, c, m.clip);
-                if (!S.linkKeys[key]) continue;
+                var linked = m.kind === 'V'
+                    ? adr_wasLinked(S, m.index, O.index, m.clip, c)
+                    : adr_wasLinked(S, O.index, m.index, c, m.clip);
+                if (!linked) continue;
                 inGroup[pk] = true;
                 members.push({ kind: O.kind, index: O.index, clip: c, s: cs, e: ce });
             }
@@ -1602,6 +1643,27 @@ function adr_unitLink(S) {
             S.mismatchNotes.push(g.label + ' ' + (g.s / ADR_TPS).toFixed(2) + ' s : lien image / son non retabli');
         }
     }
+}
+
+/** Pour le journal : morceaux lies a au moins un autre clip, par piste video. */
+function adr_linkReport(S) {
+    var out = [];
+    for (var t = 0; t < S.tracks.length; t++) {
+        var T = S.tracks[t];
+        if (T.kind !== 'V') continue;
+        var clips = T.dom.clips;
+        var linked = 0;
+        for (var i = 0; i < clips.numItems; i++) {
+            try {
+                var li = clips[i].getLinkedItems();
+                var others = 0;
+                for (var j = 0; li && j < li.numItems; j++) if (!adr_sameClip(S, li[j], clips[i])) others++;
+                if (others) linked++;
+            } catch (e) {}
+        }
+        out.push(T.label + ' ' + linked + '/' + clips.numItems);
+    }
+    return out.join(', ');
 }
 
 function adr_progress(S) {
@@ -1710,6 +1772,10 @@ function ADR_finish() {
         if (S.linkApi && S.linkPairs) {
             S.log.push('liens image / son : ' + S.linkOk + ' deja en place, ' + S.relinked + ' retablis' +
                        (S.relinkFailed ? ', ' + S.relinkFailed + ' EN ECHEC' : ''));
+            var pairs = [];
+            for (var lt in S.linkTracks) if (S.linkTracks.hasOwnProperty(lt)) pairs.push(lt);
+            S.log.push('  couples d\'origine : ' + pairs.join(', '));
+            S.log.push('  morceaux video lies : ' + adr_linkReport(S));
         }
         if (S.mismatch) {
             S.log.push('CONTROLE FINAL : ' + S.mismatch + ' ecart(s)');
