@@ -770,7 +770,7 @@ class SetupForm : Form
         {
             Text = "Désinstaller FirstCut";
             title.Text = "Désinstaller FirstCut";
-            body.Text = "Retire le panneau FirstCut de Premiere Pro.\n\nTes projets et tes séquences ne sont pas touchés.";
+            body.Text = "Retire le panneau FirstCut de Premiere Pro. Tes projets et tes séquences ne sont pas touchés.\nPlayerDebugMode reste actif : d'autres panneaux peuvent en avoir besoin.";
             purge.Visible = true;
             primary.Text = "Désinstaller";
             link.Visible = false;
@@ -799,7 +799,7 @@ class SetupForm : Form
             intro = "Version installée : " + installed + "   →   nouvelle version : " + BuildInfo.Version + ".\nTes réglages et tes clés sont gardés.";
             primary.Text = "Mettre à jour";
         }
-        body.Text = intro + "\n\n•  Pour ton compte Windows, sans droits administrateur\n•  Ne modifie aucune autre extension\n•  Se désinstalle depuis Paramètres › Applications";
+        body.Text = intro + "\n\n•  Pour ton compte Windows, sans droits administrateur\n•  Active PlayerDebugMode : Premiere accepte les panneaux non signés\n•  Se désinstalle depuis Paramètres › Applications";
         link.Visible = installed != null || Installer.IsRegistered();
         warn.Visible = premiereOpen;
         warn.Text = "Premiere Pro est ouvert : tu peux installer maintenant, il faudra juste le redémarrer ensuite.";

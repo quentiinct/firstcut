@@ -216,6 +216,32 @@ Ces tests couvrent le calcul et la logique. Les appels à Premiere eux-mêmes
 (rasoir, suppression, export audio) ne peuvent être exercés que dans Premiere :
 faire le premier essai sur une séquence sans enjeu.
 
+## Publier une version signée
+
+À chaque envoi, GitHub Actions ([build.yml](../.github/workflows/build.yml)) lance
+les tests et compile l'installateur sur une machine GitHub. Sur un tag `v*`, il
+l'envoie aussi à SignPath pour signature.
+
+1. Monter la version dans `extension/CSXS/manifest.xml` (deux fois) et dans
+   `extension/jsx/firstcut.jsx` (`ADR_VERSION`), puis commit.
+2. `git tag v1.0.1` puis `git push origin v1.0.1` (le tag doit être la version du manifeste).
+3. Valider la demande de signature dans SignPath (elle attend une heure au plus).
+4. L'installateur signé est joint à la release du tag. Si elle n'existe pas encore,
+   un brouillon est créé : ajouter les notes et le lien « Code signing policy »,
+   puis publier.
+
+Configuration, une seule fois, une fois le projet accepté par SignPath :
+
+- Projet SignPath : système de compilation de confiance « GitHub.com »,
+  configuration d'artefact copiée depuis
+  [.signpath/artifact-configuration.xml](../.signpath/artifact-configuration.xml),
+  politique de signature de publication avec validation manuelle.
+- Dépôt GitHub › Settings › Secrets and variables › Actions :
+  secret `SIGNPATH_API_TOKEN` ; variables `SIGNPATH_ORGANIZATION_ID`,
+  `SIGNPATH_PROJECT_SLUG` et `SIGNPATH_SIGNING_POLICY_SLUG`.
+
+Tant que ces variables manquent, la compilation se fait quand même, sans signature.
+
 ## Animations
 
 Toutes les durées et courbes sont réglées en tête de la partie « MOUVEMENT »

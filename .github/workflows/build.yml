@@ -1,0 +1,98 @@
+# Compile et teste FirstCut sur une machine GitHub, a chaque envoi.
+# Sur un tag v* (ex. v1.0.1), l'installateur est signe par SignPath (une fois
+# le projet configure, voir docs/GUIDE.md) puis joint a la release du tag.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write # joindre l'installateur signe a la release
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Tests (detection, plans, transcription)
+        run: node --test tests/
+
+      - name: Tests (logique Premiere sur une timeline simulee)
+        shell: cmd
+        run: cscript //nologo tests\jsx\run.wsf
+
+      - name: Installateur
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File installer\build.ps1
+
+      - name: Version
+        id: version
+        shell: powershell
+        run: |
+          $m = Get-Content extension\CSXS\manifest.xml -Raw
+          if ($m -notmatch 'ExtensionBundleVersion="([0-9.]+)"') { throw 'version introuvable dans le manifeste' }
+          $v = $Matches[1]
+          if ($env:GITHUB_REF -like 'refs/tags/v*' -and $env:GITHUB_REF_NAME -ne "v$v") {
+            throw "le tag $env:GITHUB_REF_NAME ne correspond pas a la version du manifeste ($v)"
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+          New-Item -ItemType Directory -Force unsigned | Out-Null
+          Copy-Item "dist\FirstCut-Setup-$v.exe" unsigned\FirstCut-Setup.exe
+
+      - name: Installateur non signe
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: FirstCut-Setup-unsigned
+          path: unsigned/FirstCut-Setup.exe
+          if-no-files-found: error
+
+      - name: Signature (SignPath)
+        if: startsWith(github.ref, 'refs/tags/v') && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # chaque version attend la validation manuelle dans SignPath
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+          parameters: |
+            version: ${{ toJSON(steps.version.outputs.version) }}
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v') && vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # gh ecrit sur stderr quand la release n'existe pas encore : ce n'est pas une erreur ici
+          $ErrorActionPreference = 'Continue'
+          $v = '${{ steps.version.outputs.version }}'
+          $exe = "dist\FirstCut-Setup-$v.exe"
+          Copy-Item signed\FirstCut-Setup.exe $exe -Force
+          $sig = Get-AuthenticodeSignature $exe
+          if ($sig.Status -ne 'Valid') { throw "signature invalide : $($sig.Status)" }
+          Write-Host "Signe par : $($sig.SignerCertificate.Subject)"
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:GITHUB_REF_NAME $exe --clobber
+          } else {
+            gh release create $env:GITHUB_REF_NAME $exe --draft --title "FirstCut $v" --notes "Brouillon cree par la compilation : ajoute les notes puis publie."
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'envoi vers la release impossible' }
