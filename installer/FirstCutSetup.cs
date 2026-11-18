@@ -129,6 +129,7 @@ static class Installer
     {
         Log("Installation de FirstCut " + BuildInfo.Version);
         report(3, "Préparation…");
+        CleanOldUninstallers();
         string stage = Path.Combine(Path.GetTempPath(), "FirstCut-setup-" + Guid.NewGuid().ToString("N").Substring(0, 8));
         try
         {
@@ -179,9 +180,135 @@ static class Installer
         report(75, "Retrait de Paramètres › Applications…");
         try { Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, false); }
         catch { }
+        ReleaseParent(true);
         RemoveAppDir();
+        CleanOldUninstallers();
         report(100, "Terminé.");
         Log("Desinstallation OK");
+    }
+
+    // ------------------------------------------------- desinstallation en deux temps
+    //
+    // Lance depuis %LOCALAPPDATA%\Programs\FirstCut (Parametres > Applications),
+    // ce programme ne peut pas effacer son propre fichier. Comme les
+    // installateurs classiques, il se recopie dans %TEMP% et passe la main a
+    // cette copie, qui desinstalle puis retire le dossier une fois l'original
+    // ferme. En mode silencieux, l'original attend le resultat pour rendre le
+    // bon code de sortie.
+
+    static int parentPid;
+    static string handoffToken;
+
+    static string SelfPath { get { return Path.GetFullPath(Assembly.GetExecutingAssembly().Location); } }
+
+    public static bool RunningFromAppDir()
+    {
+        return SelfPath.StartsWith(Path.GetFullPath(AppDir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string EventName(string token, string what)
+    {
+        return @"Local\FirstCut-uninstall-" + token + "-" + what;
+    }
+
+    /// <summary>Recopie ce programme dans %TEMP% et lui confie la desinstallation.</summary>
+    public static int HandOff(bool quiet, bool purge)
+    {
+        string token = Guid.NewGuid().ToString("N").Substring(0, 12);
+        string copy = Path.Combine(Path.GetTempPath(), "FirstCut-Uninstall-" + token + ".exe");
+        File.Copy(SelfPath, copy, true);
+        using (EventWaitHandle ok = new EventWaitHandle(false, EventResetMode.ManualReset, EventName(token, "ok")))
+        using (EventWaitHandle fail = new EventWaitHandle(false, EventResetMode.ManualReset, EventName(token, "fail")))
+        {
+            string args = "/uninstall" + (quiet ? " /quiet" : "") + (purge ? " /purge" : "") +
+                " /handoff " + Process.GetCurrentProcess().Id + ":" + token;
+            ProcessStartInfo psi = new ProcessStartInfo(copy, args);
+            psi.UseShellExecute = false;
+            psi.WorkingDirectory = Path.GetTempPath();
+            Log("Desinstallation confiee a " + copy);
+            using (Process child = Process.Start(psi))
+            {
+                if (!quiet) return 0;
+                WaitHandle[] both = { ok, fail };
+                while (true)
+                {
+                    int hit = WaitHandle.WaitAny(both, 500);
+                    if (hit == 0) return 0;
+                    if (hit == 1) return 1;
+                    if (child.HasExited) return child.ExitCode == 0 && ok.WaitOne(0) ? 0 : 1;
+                }
+            }
+        }
+    }
+
+    /// <summary>Copie temporaire : note qui attendre (argument /handoff pid:jeton).</summary>
+    public static void TakeOver(string arg)
+    {
+        int colon = arg.IndexOf(':');
+        if (colon <= 0) return;
+        int.TryParse(arg.Substring(0, colon), out parentPid);
+        handoffToken = arg.Substring(colon + 1);
+    }
+
+    /// <summary>Donne le resultat a l'original (mode silencieux), qui peut alors se fermer.</summary>
+    public static void ReleaseParent(bool success)
+    {
+        if (handoffToken == null) return;
+        try
+        {
+            using (EventWaitHandle h = EventWaitHandle.OpenExisting(EventName(handoffToken, success ? "ok" : "fail")))
+            {
+                h.Set();
+            }
+        }
+        catch { }
+    }
+
+    /// <summary>Retire le dossier du programme, une fois l'original ferme.</summary>
+    static void RemoveAppDir()
+    {
+        if (!Directory.Exists(AppDir)) return;
+        if (RunningFromAppDir())
+        {
+            Log("Dossier garde, programme en cours : " + AppDir);
+            return;
+        }
+        if (parentPid > 0)
+        {
+            try
+            {
+                using (Process p = Process.GetProcessById(parentPid)) p.WaitForExit(30000);
+            }
+            catch { }
+        }
+        for (int i = 0; i < 10; i++)
+        {
+            try
+            {
+                Directory.Delete(AppDir, true);
+                return;
+            }
+            catch
+            {
+                Thread.Sleep(300);
+            }
+        }
+        Log("Non supprime : " + AppDir);
+    }
+
+    /// <summary>Efface les copies temporaires laissees par les desinstallations precedentes.</summary>
+    public static void CleanOldUninstallers()
+    {
+        try
+        {
+            foreach (string f in Directory.GetFiles(Path.GetTempPath(), "FirstCut-Uninstall-*.exe"))
+            {
+                if (string.Equals(Path.GetFullPath(f), SelfPath, StringComparison.OrdinalIgnoreCase)) continue;
+                try { File.Delete(f); }
+                catch { }
+            }
+        }
+        catch { }
     }
 
     // ------------------------------------------------------------------ etapes
@@ -320,23 +447,6 @@ static class Installer
         }
     }
 
-    /// <summary>Retire la copie du programme ; si c'est elle qui tourne, juste apres sa fermeture.</summary>
-    static void RemoveAppDir()
-    {
-        if (!Directory.Exists(AppDir)) return;
-        string self = Path.GetFullPath(Assembly.GetExecutingAssembly().Location);
-        if (!self.StartsWith(Path.GetFullPath(AppDir).TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase))
-        {
-            DeleteQuietly(AppDir);
-            return;
-        }
-        ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c ping -n 4 127.0.0.1 >nul & rd /s /q \"" + AppDir + "\"");
-        psi.CreateNoWindow = true;
-        psi.UseShellExecute = false;
-        psi.WindowStyle = ProcessWindowStyle.Hidden;
-        psi.WorkingDirectory = Path.GetTempPath();
-        Process.Start(psi);
-    }
 }
 
 // ============================================================================
@@ -671,7 +781,7 @@ class SetupForm : Form
 
         Text = "Installation de FirstCut";
         purge.Visible = false;
-        string intro = "Le panneau qui fait ton premier montage dans Premiere Pro : silences coupés, caméra de celui qui parle, zooms et B-rolls.";
+        string intro = "Le dérush automatique pour Premiere Pro.\nSilences, caméras, zooms et B-rolls, en un clic.";
         if (installed == null)
         {
             title.Text = "Installer FirstCut";
@@ -854,7 +964,21 @@ static class Program
     static int Main(string[] args)
     {
         bool uninstall = Has(args, "/uninstall");
-        if (Has(args, "/quiet") || Has(args, "/silent"))
+        bool quiet = Has(args, "/quiet") || Has(args, "/silent");
+        string handoff = After(args, "/handoff");
+        if (handoff != null) Installer.TakeOver(handoff);
+        else if (uninstall && Installer.RunningFromAppDir())
+        {
+            try
+            {
+                return Installer.HandOff(quiet, Has(args, "/purge"));
+            }
+            catch (Exception e)
+            {
+                Installer.Log("Passage de main impossible, desinstallation sur place : " + e.Message);
+            }
+        }
+        if (quiet)
         {
             try
             {
@@ -866,6 +990,7 @@ static class Program
             catch (Exception e)
             {
                 Installer.Log("ERREUR " + e);
+                Installer.ReleaseParent(false);
                 return 1;
             }
         }

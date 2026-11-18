@@ -896,6 +896,92 @@ function T_groupsByPosition(refs) {
     }
 })();
 
+/**
+ * Groupes par morceau de la piste de reference : chaque morceau des autres
+ * pistes listees qui le chevauche partage son lien, et deux morceaux de la
+ * reference n'ont jamais le meme lien (bornes pas forcement identiques).
+ */
+function T_groupsByOverlap(refs) {
+    var bad = [];
+    function trackOf(r) {
+        return r[0] === 'V' ? MOCK.seq.videoTracks[r[1]] : MOCK.seq.audioTracks[r[1]];
+    }
+    var first = trackOf(refs[0]);
+    var seenLk = {};
+    for (var i = 0; i < first._items.length; i++) {
+        var p = first._items[i];
+        if (!p._lk) {
+            bad.push(p.s / F + ' non lie');
+            continue;
+        }
+        if (seenLk[p._lk]) bad.push(p.s / F + ' meme lien que ' + seenLk[p._lk]);
+        seenLk[p._lk] = p.s / F;
+    }
+    for (var r = 1; r < refs.length; r++) {
+        var items = trackOf(refs[r])._items;
+        for (var j = 0; j < items.length; j++) {
+            var q = items[j];
+            var host = null;
+            for (var k = 0; k < first._items.length; k++) {
+                var f = first._items[k];
+                if (Math.min(f.e, q.e) - Math.max(f.s, q.s) > 0) host = f;
+            }
+            var name = refs[r][0] + (refs[r][1] + 1) + ' ' + q.s / F + '-' + q.e / F;
+            if (!host) bad.push(name + ' sans morceau de reference');
+            else if (!q._lk || q._lk !== host._lk) bad.push(name + ' hors du groupe');
+        }
+    }
+    return bad.length ? bad.join(', ') : 'ok';
+}
+
+(function () {
+    for (var m = 0; m < T_SEL_MODES.length; m++) {
+        for (var r = 0; r < T_RAZOR_MODES.length; r++) {
+            (function (sel, razor) {
+                T_scenario('liens double POV + double son [' + sel[0] + ', rasoir ' + razor + '] : camera 2 decalee, les quatre lies', function () {
+                    // V1 + A1 : camera 1 et son micro ; V2 + A2 : camera 2, lancee un peu apres et coupee un peu avant
+                    MOCK.install(30, { V: [[[0, 1800]], [[80, 1790]]], A: [[[0, 1800]], [[80, 1790]]] });
+                    for (var k in sel[1]) if (sel[1].hasOwnProperty(k)) MOCK.config[k] = sel[1][k];
+                    MOCK.config.razorLinks = razor;
+                    MOCK.seq.videoTracks[0]._items[0].node = 'cam1';
+                    MOCK.seq.audioTracks[0]._items[0].node = 'micro1';
+                    MOCK.seq.videoTracks[1]._items[0].node = 'cam2';
+                    MOCK.seq.audioTracks[1]._items[0].node = 'micro2';
+                    for (var t = 0; t < 2; t++) {
+                        MOCK.seq.videoTracks[t]._rebuild();
+                        MOCK.seq.audioTracks[t]._rebuild();
+                    }
+                    T_linkTogether('tout', [['V', 0, 0], ['V', 1, 0], ['A', 0, 0], ['A', 1, 0]]);
+                    var res = T_run({ mode: 'delete', A: SIL });
+                    T_check(res.finish && res.finish.ok, 'finish : ' + (res.finish && res.finish.mismatchNotes));
+                    T_eq(T_groupsByOverlap([['V', 0], ['V', 1], ['A', 0], ['A', 1]]), 'ok', 'chaque morceau de V2 relie aux morceaux qu il chevauche');
+                    T_eq(res.finish.relinkFailed, 0, 'aucun lien en echec');
+                });
+                T_scenario('liens double POV + double son [' + sel[0] + ', rasoir ' + razor + '] : chaque camera liee a son son, decalees', function () {
+                    MOCK.install(30, { V: [[[0, 1800]], [[80, 1790]]], A: [[[0, 1800]], [[80, 1790]]] });
+                    for (var k in sel[1]) if (sel[1].hasOwnProperty(k)) MOCK.config[k] = sel[1][k];
+                    MOCK.config.razorLinks = razor;
+                    MOCK.seq.videoTracks[1]._items[0].node = 'cam2';
+                    MOCK.seq.audioTracks[1]._items[0].node = 'cam2';
+                    MOCK.seq.videoTracks[1]._rebuild();
+                    MOCK.seq.audioTracks[1]._rebuild();
+                    T_linkTogether('cam1', [['V', 0, 0], ['A', 0, 0]]);
+                    T_linkTogether('cam2', [['V', 1, 0], ['A', 1, 0]]);
+                    var res = T_run({ mode: 'delete', A: SIL });
+                    T_check(res.finish && res.finish.ok, 'finish : ' + (res.finish && res.finish.mismatchNotes));
+                    T_eq(T_groupsByOverlap([['V', 0], ['A', 0]]), 'ok', 'V1 / A1');
+                    T_eq(T_groupsByOverlap([['V', 1], ['A', 1]]), 'ok', 'V2 / A2');
+                    var v1 = MOCK.seq.videoTracks[0]._items;
+                    var v2 = MOCK.seq.videoTracks[1]._items;
+                    var mixed = 0;
+                    for (var i = 0; i < v1.length; i++) for (var j = 0; j < v2.length; j++) if (v1[i]._lk && v1[i]._lk === v2[j]._lk) mixed++;
+                    T_eq(mixed, 0, 'les deux cameras restent separees');
+                });
+            })(T_SEL_MODES[m], T_RAZOR_MODES[r]);
+        }
+    }
+})();
+
 // ============================================================== POV
 
 function T_pov(tracks, shots, opts) {

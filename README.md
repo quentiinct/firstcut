@@ -1,7 +1,7 @@
 # FirstCut
 
-**Ton premier montage, fait pour toi, dans Premiere Pro.**
-Silences coupés, caméra de celui qui parle, zooms et B-rolls, en un clic.
+**Le dérush automatique pour Premiere Pro.**
+Silences, caméras, zooms et B-rolls, en un clic.
 
 Créé par [@quentiinct](https://github.com/quentiinct).
 

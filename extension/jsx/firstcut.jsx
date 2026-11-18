@@ -1391,12 +1391,35 @@ function adr_deselectOurs(S) {
     S.ourSelection = [];
 }
 
+/**
+ * Clips d'une piste traitee qui chevauchent [s, e] de plus que la tolerance.
+ * Apres la coupe, toutes les pistes sont tranchees aux memes instants : deux
+ * morceaux qui se chevauchent viennent du meme passage garde, meme si l'un
+ * commence ou finit plus tard (camera lancee apres l'autre).
+ */
+function adr_clipsOver(S, kind, index, s, e) {
+    var out = [];
+    for (var t = 0; t < S.tracks.length; t++) {
+        var T = S.tracks[t];
+        if (T.kind !== kind || T.index !== index) continue;
+        var clips = T.dom.clips;
+        for (var i = 0; i < clips.numItems; i++) {
+            var c = clips[i];
+            var cs = adr_num(c.start.ticks);
+            if (cs >= e - S.tol) break;
+            var ce = adr_num(c.end.ticks);
+            if (Math.min(ce, e) - Math.max(cs, s) > S.tol) out.push(c);
+        }
+    }
+    return out;
+}
+
 /** Clips actuels d'un groupe (membres reperes par piste et bornes), ou null si l'un manque. */
 function adr_groupItems(S, g) {
     var out = [];
     for (var i = 0; i < g.members.length; i++) {
         var m = g.members[i];
-        var c = adr_clipAt(S, m.kind, m.index, g.s, g.e);
+        var c = adr_clipAt(S, m.kind, m.index, m.s, m.e);
         if (!c) return null;
         out.push(c);
     }
@@ -1482,31 +1505,39 @@ function adr_unitRelink(S) {
     var v = T.dom.clips[S.oi++];
     var vs = adr_num(v.start.ticks);
     var ve = adr_num(v.end.ticks);
-    var posKey = Math.round(vs / S.tb) + ':' + Math.round(ve / S.tb);
-    if (S.relinkSeen['V' + T.index + '@' + posKey]) return;
+    if (S.relinkSeen[adr_pieceKey(S, 'V', T.index, vs, ve)]) return;
 
-    // composante connexe a cette position
-    var members = [{ kind: 'V', index: T.index, clip: v }];
+    // Composante connexe autour de ce morceau : les morceaux qui le chevauchent
+    // sur les autres pistes et qui etaient lies a lui avant la coupe, puis ceux
+    // qui chevauchent ces derniers, etc. Les bornes peuvent differer d'une piste
+    // a l'autre (camera 2 lancee apres la camera 1).
+    var members = [{ kind: 'V', index: T.index, clip: v, s: vs, e: ve }];
     var inGroup = {};
-    inGroup['V' + T.index] = true;
+    inGroup[adr_pieceKey(S, 'V', T.index, vs, ve)] = true;
     var t;
     for (var q = 0; q < members.length; q++) {
         var m = members[q];
         for (t = 0; t < S.tracks.length; t++) {
             var O = S.tracks[t];
-            if (O.kind === m.kind || inGroup[O.kind + O.index]) continue;
-            var c = adr_clipAt(S, O.kind, O.index, vs, ve);
-            if (!c) continue;
-            var key = m.kind === 'V'
-                ? adr_linkKey(S, m.index, O.index, m.clip, c)
-                : adr_linkKey(S, O.index, m.index, c, m.clip);
-            if (!S.linkKeys[key]) continue;
-            inGroup[O.kind + O.index] = true;
-            members.push({ kind: O.kind, index: O.index, clip: c });
+            if (O.kind === m.kind) continue;
+            var over = adr_clipsOver(S, O.kind, O.index, m.s, m.e);
+            for (var n = 0; n < over.length; n++) {
+                var c = over[n];
+                var cs = adr_num(c.start.ticks);
+                var ce = adr_num(c.end.ticks);
+                var pk = adr_pieceKey(S, O.kind, O.index, cs, ce);
+                if (inGroup[pk]) continue;
+                var key = m.kind === 'V'
+                    ? adr_linkKey(S, m.index, O.index, m.clip, c)
+                    : adr_linkKey(S, O.index, m.index, c, m.clip);
+                if (!S.linkKeys[key]) continue;
+                inGroup[pk] = true;
+                members.push({ kind: O.kind, index: O.index, clip: c, s: cs, e: ce });
+            }
         }
     }
     for (t = 0; t < members.length; t++) {
-        if (members[t].kind === 'V') S.relinkSeen['V' + members[t].index + '@' + posKey] = true;
+        if (members[t].kind === 'V') S.relinkSeen[adr_pieceKey(S, 'V', members[t].index, members[t].s, members[t].e)] = true;
     }
     if (members.length < 2) return;
     var items = [];
@@ -1516,8 +1547,13 @@ function adr_unitRelink(S) {
         return;
     }
     var plain = [];
-    for (t = 0; t < members.length; t++) plain.push({ kind: members[t].kind, index: members[t].index });
+    for (t = 0; t < members.length; t++) plain.push({ kind: members[t].kind, index: members[t].index, s: members[t].s, e: members[t].e });
     S.relinkTodo.push({ members: plain, s: vs, e: ve, label: T.label });
+}
+
+/** Repere d'un morceau : piste et bornes arrondies a l'image. */
+function adr_pieceKey(S, kind, index, s, e) {
+    return kind + index + '@' + Math.round(s / S.tb) + ':' + Math.round(e / S.tb);
 }
 
 /** Etape 2 : delie d'un coup tout ce qui doit etre relie. */
