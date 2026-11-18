@@ -26,6 +26,10 @@ jobs:
         with:
           node-version: 20
 
+      - name: Dependances du panneau
+        working-directory: extension
+        run: npm ci --no-audit --no-fund
+
       - name: Tests (detection, plans, transcription)
         run: node --test tests/
 
