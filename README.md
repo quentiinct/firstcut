@@ -1,9 +1,18 @@
-# FirstCut
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/scissors-dark.png">
+    <img src="docs/scissors.png" width="160" alt="Ciseaux en pixel art">
+  </picture>
+</p>
 
-**Le dérush automatique pour Premiere Pro.**
-Silences, caméras, zooms et B-rolls, en un clic.
+<h1 align="center">FirstCut</h1>
 
-Créé par [@quentiinct](https://github.com/quentiinct).
+<p align="center">
+  <b>Le dérush automatique pour Premiere Pro.</b><br>
+  Silences, caméras, zooms et B-rolls, en un clic.
+</p>
+
+<p align="center">Créé par <a href="https://github.com/quentiinct">@quentiinct</a></p>
 
 ## Installer (Windows)
 
