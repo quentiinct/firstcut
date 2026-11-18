@@ -123,8 +123,11 @@ proposées.
    (automatique : la première piste libre au-dessus de V1) et agrandis pour
    remplir le cadre. Sauvegarde de la séquence avant, par défaut.
 
-Les clés API sont enregistrées en clair dans `%APPDATA%\FirstCut\settings.json`,
-sur cet ordinateur seulement.
+Les clés API restent sur cet ordinateur, dans `%APPDATA%\FirstCut\settings.json`.
+Sous Windows, elles y sont chiffrées avec ta session (DPAPI) : copié sur un autre
+PC ou ouvert depuis une autre session, le fichier ne permet pas de les relire. Ça
+ne protège pas d'un programme qui tourne déjà sous ta session : pour la clé Claude,
+fixe une limite de dépense dans la console Anthropic. Sur Mac, elles restent en clair.
 
 ## Montage express
 
@@ -246,6 +249,7 @@ extension/
   js/broll.js           B-roll : écran de réglages et pose
   js/express.js         Montage express : enchaînement Silences, POV, Zoom
   js/onboarding.js      présentation au premier lancement
+  js/secrets.js         clés API chiffrées avec la session Windows (DPAPI)
   js/povplan.js         POV : qui parle, quelle caméra (calcul pur)
   js/pov.js             POV : écran de réglages et application
   node_modules/         SDK Anthropic (@anthropic-ai/sdk 1.9.0), chargé par le panneau

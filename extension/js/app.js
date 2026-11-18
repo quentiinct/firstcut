@@ -20,6 +20,7 @@
   var D = window.ADDetect;
   var W = window.ADWav;
   var Demo = window.ADDemo;
+  var Secrets = window.ADSecrets;
   var DEMO = !Host.available && Demo && Demo.active;
 
   var TPS = 254016000000;
@@ -290,6 +291,16 @@
       store.broll = s.broll && typeof s.broll === 'object' ? s.broll : null;
       store.ffmpegPath = typeof s.ffmpegPath === 'string' ? s.ffmpegPath : '';
     } catch (e2) {}
+    // Des cles encore en clair (versions d'avant le chiffrement) : on les chiffre tout de suite.
+    if (canSeal() && keyVault.open(store.broll)) saveSettings();
+  }
+
+  // Dans settings.json, les cles API sont chiffrees pour la session Windows
+  // (voir secrets.js) ; en memoire, le panneau les garde en clair.
+  var keyVault = Secrets ? Secrets.vault(['pexelsKey', 'claudeKey']) : null;
+
+  function canSeal() {
+    return !DEMO && Host.available && !!keyVault && Secrets.available();
   }
 
   var saveTimer = null;
@@ -297,7 +308,13 @@
     clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
       try {
-        var raw = JSON.stringify(store, null, 1);
+        var data = store;
+        if (store.broll && canSeal()) {
+          data = {};
+          for (var k in store) if (Object.prototype.hasOwnProperty.call(store, k)) data[k] = store[k];
+          data.broll = keyVault.sealedCopy(store.broll);
+        }
+        var raw = JSON.stringify(data, null, 1);
         if (DEMO || !Host.available) window.localStorage.setItem('firstcut', raw);
         else N().fs.writeFileSync(N().path.join(dataDir(), 'settings.json'), raw, 'utf8');
       } catch (e) {}

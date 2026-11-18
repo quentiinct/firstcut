@@ -154,8 +154,14 @@
     $('b-lib-opts').classList.toggle('off', !s.library);
     $('b-ai-opts').classList.toggle('hidden', s.engine !== 'ai');
     $('b-online-help').textContent = s.pexelsKey
-      ? 'Vidéos et photos Pexels, libres d\'usage.'
+      ? 'Vidéos et photos Pexels, libres d\'usage. ' + keysNote()
       : 'Sans clé Pexels : photos libres Openverse (Creative Commons, crédits enregistrés à côté des fichiers). Avec une clé gratuite : vidéos et photos Pexels.';
+    $('b-claude-help').textContent = 'Facturée sur ton compte Anthropic. ' + keysNote();
+  }
+
+  function keysNote() {
+    var sealed = global.ADSecrets && global.ADSecrets.available() && ctx.Host.available;
+    return sealed ? 'Ta clé reste sur ce PC, chiffrée avec ta session Windows.' : 'Ta clé reste sur cet ordinateur.';
   }
 
   function onChange(relist) {

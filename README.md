@@ -36,6 +36,7 @@ clips sélectionnés. Avant chaque modification, ta séquence est dupliquée.
 - Windows 10 ou 11, Premiere Pro 2021 (15.0) ou plus récent.
 - Pour B-roll, en option : une clé Pexels (vidéos en ligne), une clé Claude (choix par IA)
   et ffmpeg (pour ton dossier de vidéos). La transcription se télécharge au premier usage.
+- Tes clés API restent sur ton PC, chiffrées avec ta session Windows.
 - Mac : pas d'installateur pour l'instant.
 
 ## Développer
