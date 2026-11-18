@@ -1,0 +1,9 @@
+{
+  "name": "firstcut-panel",
+  "private": true,
+  "description": "Dependances du panneau FirstCut (chargees par CEP)",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.9.0"
+  }
+}

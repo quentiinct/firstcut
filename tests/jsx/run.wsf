@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- Tests de firstcut.jsx sur une timeline simulee.
+     Lancer :  cscript //nologo tests\jsx\run.wsf -->
+<job id="firstcut-jsx-tests">
+  <script language="JScript" src="mock.js"/>
+  <script language="JScript" src="..\..\extension\jsx\firstcut.jsx"/>
+  <script language="JScript" src="tests.js"/>
+</job>

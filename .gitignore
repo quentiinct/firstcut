@@ -1,0 +1,6 @@
+# fabriques par installer/build.ps1
+installer/obj/
+dist/
+
+# reinstalle par "npm ci" dans extension/ (build.ps1 le fait tout seul)
+extension/node_modules/
